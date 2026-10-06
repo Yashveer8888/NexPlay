@@ -8,7 +8,9 @@ interface VideoCardProps {
   video: VideoItem;
   viewMode: 'grid' | 'list';
   onPress: () => void;
-  onFavoriteToggle?: () => void;
+  onLongPress?: () => void;
+  isSelectionMode?: boolean;
+  isSelected?: boolean;
 }
 
 const formatDuration = (ms: number): string => {
@@ -46,7 +48,9 @@ export const VideoCard: React.FC<VideoCardProps> = ({
   video,
   viewMode,
   onPress,
-  onFavoriteToggle,
+  onLongPress,
+  isSelectionMode,
+  isSelected,
 }) => {
   const theme = useThemeStore((state) => state.theme);
   const resLabel = getResolutionLabel(video.width, video.height);
@@ -54,8 +58,15 @@ export const VideoCard: React.FC<VideoCardProps> = ({
   if (viewMode === 'grid') {
     return (
       <TouchableOpacity
-        style={[styles.gridContainer, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
+        style={[
+          styles.gridContainer,
+          {
+            backgroundColor: theme.colors.card,
+            borderColor: isSelected ? theme.colors.primary : theme.colors.border,
+          },
+        ]}
         onPress={onPress}
+        onLongPress={onLongPress}
         activeOpacity={0.8}
       >
         <View style={[styles.gridThumbnail, { backgroundColor: theme.colors.surfaceLight }]}>
@@ -77,6 +88,24 @@ export const VideoCard: React.FC<VideoCardProps> = ({
               <Text style={styles.badgeText}>{resLabel}</Text>
             </View>
           ) : null}
+
+          {isSelectionMode && (
+            <View
+              style={[
+                styles.gridCheckbox,
+                {
+                  borderColor: isSelected ? theme.colors.primary : '#FFFFFF',
+                  backgroundColor: isSelected ? theme.colors.primary : 'rgba(0,0,0,0.5)',
+                },
+              ]}
+            >
+              {isSelected && (
+                <Svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFF" strokeWidth="3">
+                  <Path d="M5 13l4 4L19 7" />
+                </Svg>
+              )}
+            </View>
+          )}
         </View>
 
         <View style={styles.gridInfo}>
@@ -93,10 +122,34 @@ export const VideoCard: React.FC<VideoCardProps> = ({
 
   return (
     <TouchableOpacity
-      style={[styles.listContainer, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
+      style={[
+        styles.listContainer,
+        {
+          backgroundColor: theme.colors.card,
+          borderColor: isSelected ? theme.colors.primary : theme.colors.border,
+        },
+      ]}
       onPress={onPress}
+      onLongPress={onLongPress}
       activeOpacity={0.8}
     >
+      {isSelectionMode && (
+        <View
+          style={[
+            styles.checkboxCircle,
+            {
+              borderColor: isSelected ? theme.colors.primary : theme.colors.textMuted,
+              backgroundColor: isSelected ? theme.colors.primary : 'transparent',
+            },
+          ]}
+        >
+          {isSelected && (
+            <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FFF" strokeWidth="3">
+              <Path d="M5 13l4 4L19 7" />
+            </Svg>
+          )}
+        </View>
+      )}
       <View style={[styles.listThumbnail, { backgroundColor: theme.colors.surfaceLight }]}>
         {video.thumbnailUri ? (
           <Image source={{ uri: video.thumbnailUri }} style={styles.thumbnailImage} />
@@ -136,21 +189,6 @@ export const VideoCard: React.FC<VideoCardProps> = ({
           ) : null}
         </View>
       </View>
-
-      {onFavoriteToggle && (
-        <TouchableOpacity style={styles.favButton} onPress={onFavoriteToggle}>
-          <Svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill={video.isFavorite ? theme.colors.accent : 'none'}
-            stroke={video.isFavorite ? theme.colors.accent : theme.colors.textMuted}
-            strokeWidth="2"
-          >
-            <Path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-          </Svg>
-        </TouchableOpacity>
-      )}
     </TouchableOpacity>
   );
 };
@@ -159,35 +197,37 @@ const styles = StyleSheet.create({
   // Grid layout styles
   gridContainer: {
     flex: 1,
-    margin: 6,
-    borderRadius: 12,
+    margin: 4,
+    borderRadius: 10,
     borderWidth: 1,
     overflow: 'hidden',
   },
   gridThumbnail: {
-    height: 110,
+    height: 94,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
   },
   gridInfo: {
-    padding: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
   },
 
   // List layout styles
   listContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 10,
-    marginVertical: 4,
-    marginHorizontal: 14,
-    borderRadius: 12,
+    paddingVertical: 7,
+    paddingHorizontal: 9,
+    marginVertical: 3,
+    marginHorizontal: 2,
+    borderRadius: 10,
     borderWidth: 1,
   },
   listThumbnail: {
-    width: 90,
-    height: 60,
-    borderRadius: 8,
+    width: 82,
+    height: 50,
+    borderRadius: 6,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
@@ -200,12 +240,12 @@ const styles = StyleSheet.create({
   },
   listContent: {
     flex: 1,
-    marginLeft: 12,
+    marginLeft: 10,
   },
   title: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: '600',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   metaRow: {
     flexDirection: 'row',
@@ -213,44 +253,61 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   subText: {
-    fontSize: 12,
+    fontSize: 11.5,
   },
   dot: {
-    marginHorizontal: 5,
-    fontSize: 12,
+    marginHorizontal: 4,
+    fontSize: 11.5,
   },
   durationBadge: {
     position: 'absolute',
-    bottom: 4,
-    right: 4,
+    bottom: 3,
+    right: 3,
     backgroundColor: 'rgba(0, 0, 0, 0.75)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
     borderRadius: 4,
   },
   resBadge: {
     position: 'absolute',
-    top: 4,
-    left: 4,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: 4,
+    top: 3,
+    left: 3,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 3,
   },
   badgeText: {
     color: '#FFFFFF',
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '700',
   },
   inlineBadge: {
-    paddingHorizontal: 6,
+    paddingHorizontal: 5,
     paddingVertical: 1,
-    borderRadius: 4,
+    borderRadius: 3,
   },
   inlineBadgeText: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '700',
   },
-  favButton: {
-    padding: 8,
+  checkboxCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  gridCheckbox: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

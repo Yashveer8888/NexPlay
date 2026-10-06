@@ -28,6 +28,17 @@ class NexPlayScannerBridge implements NexPlayScannerInterface {
     }
   }
 
+  async requestStoragePermission(): Promise<boolean> {
+    if (Platform.OS !== 'android') return true;
+    if (!NativeScanner) return false;
+    try {
+      return await NativeScanner.requestStoragePermission();
+    } catch (e) {
+      console.warn('[NexPlayScanner] requestStoragePermission failed:', e);
+      return false;
+    }
+  }
+
   async scanMediaLibrary(): Promise<VideoItem[]> {
     if (Platform.OS !== 'android') return [];
     if (!NativeScanner) {

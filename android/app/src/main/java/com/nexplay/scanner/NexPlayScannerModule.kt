@@ -52,6 +52,61 @@ class NexPlayScannerModule(private val reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun requestStoragePermission(promise: Promise) {
+        try {
+            val activity = reactContext.currentActivity
+            if (activity == null) {
+                promise.resolve(false)
+                return
+            }
+
+            val isGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ContextCompat.checkSelfPermission(
+                    reactContext,
+                    android.Manifest.permission.READ_MEDIA_VIDEO
+                ) == PackageManager.PERMISSION_GRANTED
+            } else {
+                ContextCompat.checkSelfPermission(
+                    reactContext,
+                    android.Manifest.permission.READ_EXTERNAL_STORAGE
+                ) == PackageManager.PERMISSION_GRANTED
+            }
+
+            if (isGranted) {
+                promise.resolve(true)
+                return
+            }
+
+            val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                android.Manifest.permission.READ_MEDIA_VIDEO
+            } else {
+                android.Manifest.permission.READ_EXTERNAL_STORAGE
+            }
+
+            val permissionAwareActivity = activity as? com.facebook.react.modules.core.PermissionAwareActivity
+            if (permissionAwareActivity == null) {
+                promise.resolve(false)
+                return
+            }
+
+            permissionAwareActivity.requestPermissions(
+                arrayOf(permission),
+                1001,
+                com.facebook.react.modules.core.PermissionListener { requestCode, _, grantResults ->
+                    if (requestCode == 1001) {
+                        val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+                        promise.resolve(granted)
+                        return@PermissionListener true
+                    }
+                    false
+                }
+            )
+        } catch (e: Exception) {
+            promise.resolve(false)
+        }
+    }
+
+    @ReactMethod
     fun scanMediaLibrary(promise: Promise) {
         moduleScope.launch {
             try {

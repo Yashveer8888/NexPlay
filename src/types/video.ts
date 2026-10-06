@@ -15,6 +15,8 @@ export interface VideoItem {
   completed?: boolean;
   isFavorite?: boolean;
   thumbnailUri?: string;
+  lastPlayedAt?: number;
+  playCount?: number;
   videoCodec?: string;
   audioCodec?: string;
   fps?: number;

@@ -93,7 +93,6 @@ export const AllVideosScreen: React.FC<AllVideosScreenProps> = ({ navigation }) 
             video={item}
             viewMode={viewMode}
             onPress={() => handlePlayVideo(item)}
-            onFavoriteToggle={() => toggleFavorite(item.id)}
           />
         )}
         ListEmptyComponent={

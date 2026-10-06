@@ -6,6 +6,8 @@ import { RootStackParamList } from '../../types/navigation';
 import { usePermissionStore } from '../../store/usePermissionStore';
 import { useThemeStore } from '../../store/useThemeStore';
 
+import { useLibraryStore } from '../../store/useLibraryStore';
+
 type SplashScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Splash'>;
 };
@@ -13,10 +15,15 @@ type SplashScreenProps = {
 export const SplashScreen: React.FC<SplashScreenProps> = ({ navigation }) => {
   const theme = useThemeStore((state) => state.theme);
   const { checkPermissions } = usePermissionStore();
+  const { initStore, scanLibrary } = useLibraryStore();
 
   useEffect(() => {
     const initApp = async () => {
+      await initStore();
       const hasPerm = await checkPermissions();
+      if (hasPerm) {
+        scanLibrary();
+      }
       setTimeout(() => {
         if (hasPerm) {
           navigation.replace('MainTabs');
@@ -27,7 +34,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ navigation }) => {
     };
 
     initApp();
-  }, [navigation, checkPermissions]);
+  }, [navigation, checkPermissions, initStore, scanLibrary]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>

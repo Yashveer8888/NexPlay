@@ -6,12 +6,10 @@ export type RootStackParamList = {
   MainTabs: undefined;
   Player: { video: VideoItem };
   MediaInfo: { video: VideoItem };
-  FolderDetail: { folderName: string };
+  PrivateVault: undefined;
 };
 
 export type MainTabParamList = {
-  HomeTab: undefined;
-  VideosTab: undefined;
-  FoldersTab: undefined;
-  SettingsTab: undefined;
+  MediaTab: undefined;
+  FutureTab: undefined;
 };

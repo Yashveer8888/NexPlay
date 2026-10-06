@@ -15,6 +15,9 @@ class MainApplication : Application(), ReactApplication {
       packageList =
         PackageList(this).packages.apply {
           add(com.nexplay.scanner.NexPlayScannerPackage())
+          add(com.nexplay.thumbnail.NexPlayThumbnailPackage())
+          add(com.nexplay.player.NexPlayPlayerPackage())
+          add(com.nexplay.filemanager.NexPlayFileManagerPackage())
         },
     )
   }

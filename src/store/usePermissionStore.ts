@@ -42,44 +42,66 @@ export const usePermissionStore = create<PermissionStoreState>((set, get) => ({
     if (Platform.OS !== 'android') return true;
 
     set({ isChecking: true });
+
+    // Step 1: Check if already granted
     try {
-      let granted = false;
-      const apiLevel = Platform.Version as number;
-
-      if (apiLevel >= 33) {
-        const result = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO,
-          {
-            title: 'NexPlay Video Access',
-            message: 'NexPlay needs access to your videos to display your local library offline.',
-            buttonPositive: 'Allow',
-            buttonNegative: 'Deny',
-          }
-        );
-        granted = result === PermissionsAndroid.RESULTS.GRANTED;
-      } else {
-        const result = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
-          {
-            title: 'NexPlay Storage Permission',
-            message: 'NexPlay needs access to device storage to discover and play your local videos.',
-            buttonPositive: 'Allow',
-            buttonNegative: 'Deny',
-          }
-        );
-        granted = result === PermissionsAndroid.RESULTS.GRANTED;
+      const alreadyGranted = await NexPlayScanner.checkStoragePermission();
+      if (alreadyGranted) {
+        set({ hasPermission: true, permissionState: 'GRANTED', isChecking: false });
+        return true;
       }
+    } catch (e) {
+      // Continue to request
+    }
 
+    // Step 2: Try native scanner module permission request (uses PermissionAwareActivity)
+    try {
+      const nativeGranted = await NexPlayScanner.requestStoragePermission();
+      if (nativeGranted) {
+        set({
+          hasPermission: true,
+          permissionState: 'GRANTED',
+          isChecking: false,
+        });
+        return true;
+      }
+    } catch (e) {
+      console.warn('Native requestStoragePermission exception:', e);
+    }
+
+    // Step 3: Try React Native PermissionsAndroid request as fallback
+    try {
+      const apiLevel = Platform.Version as number;
+      const permToRequest =
+        apiLevel >= 33
+          ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO
+          : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
+
+      const result = await PermissionsAndroid.request(permToRequest, {
+        title: 'NexPlay Storage Permission',
+        message: 'NexPlay needs access to your local media to play videos offline.',
+        buttonPositive: 'Allow',
+        buttonNegative: 'Deny',
+      });
+
+      const granted = result === PermissionsAndroid.RESULTS.GRANTED;
       set({
         hasPermission: granted,
         permissionState: granted ? 'GRANTED' : 'DENIED',
         isChecking: false,
       });
       return granted;
-    } catch (e) {
-      console.error('Permission request failed:', e);
-      set({ hasPermission: false, permissionState: 'DENIED', isChecking: false });
-      return false;
+    } catch (e: any) {
+      console.warn('PermissionsAndroid.request failed (activity unattached):', e?.message || e);
+
+      // Step 4: Final verification check
+      const finalCheck = await NexPlayScanner.checkStoragePermission();
+      set({
+        hasPermission: finalCheck,
+        permissionState: finalCheck ? 'GRANTED' : 'DENIED',
+        isChecking: false,
+      });
+      return finalCheck;
     }
   },
 }));

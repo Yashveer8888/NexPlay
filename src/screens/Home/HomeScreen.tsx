@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, FlatList } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, FlatList, StatusBar } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { useLibraryStore } from '../../store/useLibraryStore';
 import { useThemeStore } from '../../store/useThemeStore';
@@ -39,12 +40,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     return `${parseFloat((totalBytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
   }, [videos]);
 
+  const insets = useSafeAreaInsets();
+  const topInset = Math.max(insets.top, StatusBar.currentHeight || 0) + 12;
+
   const handlePlayVideo = (video: VideoItem) => {
     navigation.navigate('Player', { video });
   };
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+    <ScrollView style={[styles.container, { backgroundColor: theme.colors.background, paddingTop: topInset }]}>
       {/* App Header Bar */}
       <View style={styles.headerRow}>
         <View>
@@ -131,7 +135,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
               video={video}
               viewMode="list"
               onPress={() => handlePlayVideo(video)}
-              onFavoriteToggle={() => toggleFavorite(video.id)}
             />
           ))}
         </View>
@@ -145,7 +148,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: 16,
   },
   headerRow: {
     flexDirection: 'row',
