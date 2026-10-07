@@ -16,6 +16,7 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.facebook.react.bridge.Arguments
@@ -63,6 +64,9 @@ class NexPlayPlayerView(context: Context) : FrameLayout(context), Player.Listene
         initializePlayer()
     }
 
+    private var lastSeekedMs: Long = -1L
+    private var lastSeekTime: Long = 0L
+
     private fun initializePlayer() {
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
@@ -74,17 +78,20 @@ class NexPlayPlayerView(context: Context) : FrameLayout(context), Player.Listene
             .setHandleAudioBecomingNoisy(true)
             .build()
 
+        exo.setSeekParameters(SeekParameters.CLOSEST_SYNC)
         exo.addListener(this)
         playerView.player = exo
         player = exo
     }
 
     fun setVideoUri(uriString: String?, initialPositionMs: Long = 0L) {
-        if (uriString.isNull_or_empty() || uriString == currentUri) {
+        if (uriString.isNullOrEmpty() || uriString == currentUri) {
             return
         }
         currentUri = uriString
         startPositionMs = initialPositionMs
+        lastSeekedMs = -1L
+        lastSeekTime = 0L
 
         val mediaItem = MediaItem.fromUri(Uri.parse(uriString))
         val p = player ?: return
@@ -109,6 +116,11 @@ class NexPlayPlayerView(context: Context) : FrameLayout(context), Player.Listene
     }
 
     fun seekToMs(positionMs: Long) {
+        if (positionMs < 0L) return
+        val now = System.currentTimeMillis()
+        if (positionMs == lastSeekedMs && (now - lastSeekTime) < 100L) return
+        lastSeekedMs = positionMs
+        lastSeekTime = now
         player?.seekTo(positionMs)
     }
 

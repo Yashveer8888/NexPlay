@@ -4,7 +4,7 @@ export type RootStackParamList = {
   Splash: undefined;
   FirstRunPermission: undefined;
   MainTabs: undefined;
-  Player: { video: VideoItem };
+  Player: { video: VideoItem; playlist?: VideoItem[]; isVault?: boolean };
   MediaInfo: { video: VideoItem };
   PrivateVault: undefined;
 };

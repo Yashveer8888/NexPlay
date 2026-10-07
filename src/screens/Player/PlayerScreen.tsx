@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -23,10 +23,12 @@ import Animated, {
 } from 'react-native-reanimated';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../types/navigation';
+import { VideoItem } from '../../types/video';
 import { useLibraryStore } from '../../store/useLibraryStore';
 import { useThemeStore } from '../../store/useThemeStore';
 import {
   NexPlayVideoView,
+  NexPlayVideoViewRef,
   PlayerStatusEvent,
   TracksChangedEvent,
   TrackItem,
@@ -53,37 +55,108 @@ const RESIZE_MODES: Array<'contain' | 'cover' | 'fill' | 'zoom' | '16:9' | '4:3'
 
 export const PlayerScreen: React.FC<Props> = ({ route, navigation }) => {
   const initialVideo = route.params?.video;
+  const passedPlaylist = route.params?.playlist;
+  const isVaultParam = route.params?.isVault || initialVideo?.folder === 'Private Vault';
   const theme = useThemeStore((state) => state.theme);
-  const { videos, updatePlaybackPosition } = useLibraryStore();
+  const { videos, vaultVideos, updatePlaybackPosition } = useLibraryStore();
 
-  const [currentVideoId, setCurrentVideoId] = useState<string>(initialVideo?.id || videos[0]?.id || '');
-  const video = videos.find((v) => v.id === currentVideoId) || initialVideo || videos[0];
+  const activePlaylist = useMemo(() => {
+    if (passedPlaylist && passedPlaylist.length > 0) {
+      return passedPlaylist;
+    }
+    if (
+      isVaultParam ||
+      initialVideo?.folder === 'Private Vault' ||
+      vaultVideos.some((v) => v.id === initialVideo?.id)
+    ) {
+      return vaultVideos.map((item) => ({
+        id: item.id,
+        title: item.filename.replace(/\.[^/.]+$/, ''),
+        filename: item.filename,
+        path: item.vaultPath,
+        uri: item.vaultPath.startsWith('file://') ? item.vaultPath : `file://${item.vaultPath}`,
+        size: item.size,
+        duration: item.duration,
+        width: item.width,
+        height: item.height,
+        mimeType: item.mimeType,
+        dateAdded: item.dateAdded,
+        dateModified: item.dateMoved,
+        folder: 'Private Vault',
+        lastPosition: 0,
+        completed: false,
+        lastPlayedAt: Date.now(),
+        playCount: 1,
+        thumbnailUri: item.thumbnailUri,
+      }));
+    }
+    return videos;
+  }, [passedPlaylist, isVaultParam, initialVideo, vaultVideos, videos]);
 
-  const resumePosition = (video?.lastPosition && video.lastPosition > 1000 && video.duration && video.lastPosition < (video.duration - 2000))
-    ? video.lastPosition
-    : 0;
+  const [currentVideoId, setCurrentVideoId] = useState<string>(
+    initialVideo?.id || activePlaylist[0]?.id || ''
+  );
+
+  const video = useMemo(() => {
+    return activePlaylist.find((v: VideoItem) => v.id === currentVideoId) || initialVideo || activePlaylist[0];
+  }, [activePlaylist, currentVideoId, initialVideo]);
+
+  const initialResume =
+    video?.lastPosition &&
+    video.lastPosition > 1000 &&
+    video.duration &&
+    video.lastPosition < video.duration - 2000
+      ? video.lastPosition
+      : 0;
 
   const [paused, setPaused] = useState<boolean>(false);
-  const [positionMs, setPositionMs] = useState<number>(resumePosition);
+  const [positionMs, setPositionMs] = useState<number>(initialResume);
   const [durationMs, setDurationMs] = useState<number>(video?.duration || 0);
   const [bufferedMs, setBufferedMs] = useState<number>(0);
-  const [seekToTargetMs, setSeekToTargetMs] = useState<number | undefined>(resumePosition > 0 ? resumePosition : undefined);
+  const [seekToTargetMs, setSeekToTargetMs] = useState<number>(-1);
 
+  const videoRef = useRef<NexPlayVideoViewRef>(null);
   const currentVideoIdRef = useRef<string>(video?.id || '');
-  const latestPositionRef = useRef<number>(resumePosition);
+  const latestPositionRef = useRef<number>(initialResume);
   const latestDurationRef = useRef<number>(video?.duration || 0);
+  const lastSavedTimeRef = useRef<number>(Date.now());
 
   useEffect(() => {
     currentVideoIdRef.current = video?.id || '';
-    latestPositionRef.current = (video?.lastPosition && video.lastPosition > 1000) ? video.lastPosition : 0;
-    latestDurationRef.current = video?.duration || 0;
-  }, [video?.id, video?.lastPosition, video?.duration]);
+    if (video?.duration) {
+      latestDurationRef.current = video.duration;
+    }
+  }, [video?.id, video?.duration]);
+
+  // When active video changes (e.g. Next / Previous pressed), reset playback state
+  useEffect(() => {
+    if (!video) return;
+    const resume =
+      video.lastPosition &&
+      video.lastPosition > 1000 &&
+      video.duration &&
+      video.lastPosition < video.duration - 2000
+        ? video.lastPosition
+        : 0;
+    currentVideoIdRef.current = video.id;
+    latestPositionRef.current = resume;
+    latestDurationRef.current = video.duration || 0;
+    setPositionMs(resume);
+    setDurationMs(video.duration || 0);
+    setBufferedMs(0);
+    setSeekToTargetMs(-1);
+    setPaused(false);
+  }, [video?.id]);
 
   // Save exact playback position when unmounting (closing video)
   useEffect(() => {
     return () => {
       if (currentVideoIdRef.current && latestPositionRef.current > 0) {
-        updatePlaybackPosition(currentVideoIdRef.current, latestPositionRef.current, latestDurationRef.current);
+        updatePlaybackPosition(
+          currentVideoIdRef.current,
+          latestPositionRef.current,
+          latestDurationRef.current
+        );
       }
     };
   }, [updatePlaybackPosition]);
@@ -253,16 +326,43 @@ export const PlayerScreen: React.FC<Props> = ({ route, navigation }) => {
     };
   }, []);
 
+  const lastVolCallRef = useRef<number>(0);
+  const lastBrightCallRef = useRef<number>(0);
+  const latestVolRef = useRef<number>(volume);
+  const latestBrightRef = useRef<number>(brightness);
+
   const handleVolumeChange = useCallback((newVol: number) => {
-    setVolume(newVol);
-    setDisplayVolumePercent(Math.round(newVol * 100));
-    NexPlaySystemService.setSystemVolume(newVol);
+    latestVolRef.current = newVol;
+    const now = Date.now();
+    // Throttle native system calls and React state updates to at most once per 35ms
+    if (now - lastVolCallRef.current >= 35) {
+      lastVolCallRef.current = now;
+      setDisplayVolumePercent(Math.round(newVol * 100));
+      NexPlaySystemService.setSystemVolume(newVol);
+    }
   }, []);
 
   const handleBrightnessChange = useCallback((newBright: number) => {
-    setBrightness(newBright);
-    setDisplayBrightnessPercent(Math.round(newBright * 100));
-    NexPlaySystemService.setScreenBrightness(newBright);
+    latestBrightRef.current = newBright;
+    const now = Date.now();
+    // Throttle native system calls and React state updates to at most once per 35ms
+    if (now - lastBrightCallRef.current >= 35) {
+      lastBrightCallRef.current = now;
+      setDisplayBrightnessPercent(Math.round(newBright * 100));
+      NexPlaySystemService.setScreenBrightness(newBright);
+    }
+  }, []);
+
+  const handleFinalizeVolume = useCallback((finalVol: number) => {
+    setVolume(finalVol);
+    setDisplayVolumePercent(Math.round(finalVol * 100));
+    NexPlaySystemService.setSystemVolume(finalVol);
+  }, []);
+
+  const handleFinalizeBrightness = useCallback((finalBright: number) => {
+    setBrightness(finalBright);
+    setDisplayBrightnessPercent(Math.round(finalBright * 100));
+    NexPlaySystemService.setScreenBrightness(finalBright);
   }, []);
 
   // Reanimated HUD animations: Left side for Volume, Right side for Brightness
@@ -293,8 +393,8 @@ export const PlayerScreen: React.FC<Props> = ({ route, navigation }) => {
   const panGesture = Gesture.Pan()
     .enabled(!isLocked)
     .maxPointers(1)
-    .activeOffsetY([-12, 12])
-    .failOffsetX([-30, 30])
+    .activeOffsetY([-8, 8])
+    .failOffsetX([-60, 60])
     .onStart((e) => {
       'worklet';
       const isRight = e.x > layoutWidth.value / 2;
@@ -304,17 +404,17 @@ export const PlayerScreen: React.FC<Props> = ({ route, navigation }) => {
 
       if (isRight) {
         // Right side slide -> Volume HUD displayed on LEFT side
-        volumeHudOpacity.value = withTiming(1, { duration: 120 });
-        volumeHudTranslateX.value = withSpring(0, { damping: 14, stiffness: 120 });
+        volumeHudOpacity.value = withTiming(1, { duration: 100 });
+        volumeHudTranslateX.value = withSpring(0, { damping: 14, stiffness: 140 });
       } else {
         // Left side slide -> Brightness HUD displayed on RIGHT side
-        brightnessHudOpacity.value = withTiming(1, { duration: 120 });
-        brightnessHudTranslateX.value = withSpring(0, { damping: 14, stiffness: 120 });
+        brightnessHudOpacity.value = withTiming(1, { duration: 100 });
+        brightnessHudTranslateX.value = withSpring(0, { damping: 14, stiffness: 140 });
       }
     })
     .onUpdate((e) => {
       'worklet';
-      const sweepHeight = Math.max(layoutHeight.value * 0.45, 180);
+      const sweepHeight = Math.max(layoutHeight.value * 0.45, 160);
       const delta = -e.translationY / sweepHeight;
 
       if (panSide.value === 'right') {
@@ -332,11 +432,13 @@ export const PlayerScreen: React.FC<Props> = ({ route, navigation }) => {
     .onFinalize(() => {
       'worklet';
       if (panSide.value === 'right') {
-        volumeHudOpacity.value = withDelay(600, withTiming(0, { duration: 250 }));
-        volumeHudTranslateX.value = withDelay(600, withTiming(-40, { duration: 250 }));
+        volumeHudOpacity.value = withDelay(600, withTiming(0, { duration: 200 }));
+        volumeHudTranslateX.value = withDelay(600, withTiming(-40, { duration: 200 }));
+        runOnJS(handleFinalizeVolume)(currentVolumeSV.value);
       } else if (panSide.value === 'left') {
-        brightnessHudOpacity.value = withDelay(600, withTiming(0, { duration: 250 }));
-        brightnessHudTranslateX.value = withDelay(600, withTiming(40, { duration: 250 }));
+        brightnessHudOpacity.value = withDelay(600, withTiming(0, { duration: 200 }));
+        brightnessHudTranslateX.value = withDelay(600, withTiming(40, { duration: 200 }));
+        runOnJS(handleFinalizeBrightness)(currentBrightnessSV.value);
       }
       panSide.value = null;
     });
@@ -347,28 +449,36 @@ export const PlayerScreen: React.FC<Props> = ({ route, navigation }) => {
 
   const handleDoubleTapSeek = useCallback(
     (isRight: boolean) => {
-      if (isRight) {
-        setPositionMs((currentPos) => {
-          const newPos = Math.min(durationMs, currentPos + 10000);
-          setSeekToTargetMs(newPos);
-          return newPos;
-        });
-        setDoubleTapSide('right');
-      } else {
-        setPositionMs((currentPos) => {
-          const newPos = Math.max(0, currentPos - 10000);
-          setSeekToTargetMs(newPos);
-          return newPos;
-        });
-        setDoubleTapSide('left');
-      }
+      // Lock status updates for 600ms so incoming player events don't fight the seek
+      isSeekingLockRef.current = true;
+      if (seekLockTimer.current) clearTimeout(seekLockTimer.current);
+      seekLockTimer.current = setTimeout(() => {
+        isSeekingLockRef.current = false;
+      }, 600);
+
+      const currentPos = latestPositionRef.current;
+      const step = 10000;
+      const targetPos = isRight
+        ? Math.min(durationMsRef.current, currentPos + step)
+        : Math.max(0, currentPos - step);
+
+      latestPositionRef.current = targetPos;
+      setPositionMs(targetPos);
+      videoRef.current?.seekTo(targetPos);
+      setSeekToTargetMs(targetPos);
+      setDoubleTapSide(isRight ? 'right' : 'left');
 
       if (doubleTapTimer.current) clearTimeout(doubleTapTimer.current);
       doubleTapTimer.current = setTimeout(() => {
         setDoubleTapSide(null);
-      }, 700);
+      }, 650);
+
+      // Reset seek target prop to -1 so subsequent renders don't re-seek
+      setTimeout(() => {
+        setSeekToTargetMs(-1);
+      }, 150);
     },
-    [durationMs]
+    []
   );
 
   const doubleTapGesture = Gesture.Tap()
@@ -397,18 +507,38 @@ export const PlayerScreen: React.FC<Props> = ({ route, navigation }) => {
   };
 
   const handleNext = useCallback(() => {
-    const currentIndex = videos.findIndex((v) => v.id === currentVideoId);
-    if (currentIndex >= 0 && currentIndex < videos.length - 1) {
-      setCurrentVideoId(videos[currentIndex + 1].id);
+    if (!activePlaylist || activePlaylist.length === 0) return;
+    if (currentVideoIdRef.current && latestPositionRef.current > 0) {
+      updatePlaybackPosition(
+        currentVideoIdRef.current,
+        latestPositionRef.current,
+        latestDurationRef.current
+      );
     }
-  }, [videos, currentVideoId]);
+    const currentIndex = activePlaylist.findIndex((v: VideoItem) => v.id === currentVideoId);
+    if (currentIndex >= 0 && currentIndex < activePlaylist.length - 1) {
+      setCurrentVideoId(activePlaylist[currentIndex + 1].id);
+    } else if (currentIndex === activePlaylist.length - 1 && activePlaylist.length > 1) {
+      setCurrentVideoId(activePlaylist[0].id);
+    }
+  }, [activePlaylist, currentVideoId, updatePlaybackPosition]);
 
   const handlePrevious = useCallback(() => {
-    const currentIndex = videos.findIndex((v) => v.id === currentVideoId);
-    if (currentIndex > 0) {
-      setCurrentVideoId(videos[currentIndex - 1].id);
+    if (!activePlaylist || activePlaylist.length === 0) return;
+    if (currentVideoIdRef.current && latestPositionRef.current > 0) {
+      updatePlaybackPosition(
+        currentVideoIdRef.current,
+        latestPositionRef.current,
+        latestDurationRef.current
+      );
     }
-  }, [videos, currentVideoId]);
+    const currentIndex = activePlaylist.findIndex((v: VideoItem) => v.id === currentVideoId);
+    if (currentIndex > 0) {
+      setCurrentVideoId(activePlaylist[currentIndex - 1].id);
+    } else if (currentIndex === 0 && activePlaylist.length > 1) {
+      setCurrentVideoId(activePlaylist[activePlaylist.length - 1].id);
+    }
+  }, [activePlaylist, currentVideoId, updatePlaybackPosition]);
 
   // JASSI AI Voice Controller registration
   useEffect(() => {
@@ -416,13 +546,21 @@ export const PlayerScreen: React.FC<Props> = ({ route, navigation }) => {
       play: () => setPaused(false),
       pause: () => setPaused(true),
       togglePlayPause: () => setPaused((p) => !p),
-      seekTo: (ms) => setSeekToTargetMs(ms),
+      seekTo: (ms) => {
+        latestPositionRef.current = ms;
+        setPositionMs(ms);
+        videoRef.current?.seekTo(ms);
+        setSeekToTargetMs(ms);
+        setTimeout(() => setSeekToTargetMs(-1), 150);
+      },
       seekRelative: (deltaMs) => {
-        setPositionMs((currentPos) => {
-          const newPos = Math.max(0, Math.min(durationMs, currentPos + deltaMs));
-          setSeekToTargetMs(newPos);
-          return newPos;
-        });
+        const currentPos = latestPositionRef.current;
+        const newPos = Math.max(0, Math.min(durationMsRef.current, currentPos + deltaMs));
+        latestPositionRef.current = newPos;
+        setPositionMs(newPos);
+        videoRef.current?.seekTo(newPos);
+        setSeekToTargetMs(newPos);
+        setTimeout(() => setSeekToTargetMs(-1), 150);
       },
       setSpeed: (s) => setSpeed(s),
       setVolume: (v) => setVolume(v),
@@ -547,7 +685,12 @@ export const PlayerScreen: React.FC<Props> = ({ route, navigation }) => {
       onPanResponderRelease: (evt) => {
         const targetMs = calculateMsFromPageX(evt.nativeEvent.pageX);
         setPositionMs(targetMs);
+        latestPositionRef.current = targetMs;
+        videoRef.current?.seekTo(targetMs);
         setSeekToTargetMs(targetMs);
+        setTimeout(() => {
+          setSeekToTargetMs(-1);
+        }, 150);
         isScrubbingRef.current = false;
         setIsScrubbing(false);
 
@@ -580,8 +723,10 @@ export const PlayerScreen: React.FC<Props> = ({ route, navigation }) => {
     }
     setBufferedMs(bufferedPosition);
 
-    // Save playback position periodically to SQLite DB
-    if (video && position > 0 && Math.abs(position - (video.lastPosition || 0)) > 3000) {
+    // Save playback position periodically to SQLite DB (throttled to 20s to eliminate re-render lag)
+    const now = Date.now();
+    if (video && position > 0 && now - lastSavedTimeRef.current > 20000) {
+      lastSavedTimeRef.current = now;
       updatePlaybackPosition(video.id, position, duration);
     }
   };
@@ -625,13 +770,14 @@ export const PlayerScreen: React.FC<Props> = ({ route, navigation }) => {
         <View style={StyleSheet.absoluteFill}>
           <Animated.View style={[StyleSheet.absoluteFill, videoAnimatedStyle]}>
             <NexPlayVideoView
+              ref={videoRef}
               style={StyleSheet.absoluteFill}
               videoUri={video.uri || video.path}
-              initialPositionMs={resumePosition}
+              initialPositionMs={initialResume}
               paused={paused}
               seekToMs={seekToTargetMs}
               speed={speed}
-              volume={volume}
+              volume={1.0}
               resizeMode={resizeMode}
               audioTrackIndex={audioTrackIndex}
               subtitleTrackIndex={subtitleTrackIndex}

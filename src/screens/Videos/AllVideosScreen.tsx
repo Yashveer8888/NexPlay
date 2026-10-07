@@ -34,7 +34,7 @@ export const AllVideosScreen: React.FC<AllVideosScreenProps> = ({ navigation }) 
   const filteredVideos = getFilteredVideos();
 
   const handlePlayVideo = (video: VideoItem) => {
-    navigation.navigate('Player', { video });
+    navigation.navigate('Player', { video, playlist: filteredVideos });
   };
 
   const handleSelectSort = (field: SortField) => {

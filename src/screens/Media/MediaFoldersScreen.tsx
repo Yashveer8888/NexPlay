@@ -19,9 +19,10 @@ import { useLibraryStore } from '../../store/useLibraryStore';
 import { useThemeStore } from '../../store/useThemeStore';
 import { VideoCard } from '../../components/common/VideoCard';
 import { ScanProgressBar } from '../../components/common/ScanProgressBar';
-import { VideoItem, FolderItem } from '../../types/video';
+import { VideoItem, FolderItem, SortField, SortOrder, SortOption } from '../../types/video';
 import { FileManagerService } from '../../services/native/NexPlayFileManager';
 import { VaultProgressPill } from '../../components/common/VaultProgressPill';
+import { SortFilterModal } from '../../components/common/SortFilterModal';
 
 interface MediaFoldersScreenProps {
   navigation: any;
@@ -53,10 +54,13 @@ export const MediaFoldersScreen: React.FC<MediaFoldersScreenProps> = ({ navigati
     deleteFoldersPermanently,
     moveVideosToVault,
     moveFoldersToVault,
+    sortOption,
+    setSortOption,
   } = useLibraryStore();
 
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [browseMode, setBrowseMode] = useState<'folders' | 'all'>('folders');
+  const [isSortModalVisible, setIsSortModalVisible] = useState<boolean>(false);
 
   // Multi-selection state
   const [isSelectionMode, setIsSelectionMode] = useState<boolean>(false);
@@ -109,11 +113,11 @@ export const MediaFoldersScreen: React.FC<MediaFoldersScreenProps> = ({ navigati
 
   const handlePlayRecent = () => {
     if (mostRecentVideo) {
-      navigation.navigate('Player', { video: mostRecentVideo });
+      navigation.navigate('Player', { video: mostRecentVideo, playlist: displayedVideos });
     }
   };
 
-  // Filtered videos based on search and selected folder
+  // Filtered and sorted videos based on search, folder, and sortOption
   const displayedVideos = useMemo(() => {
     let result = videos;
 
@@ -133,14 +137,49 @@ export const MediaFoldersScreen: React.FC<MediaFoldersScreenProps> = ({ navigati
       );
     }
 
-    return result;
-  }, [videos, selectedFolder, browseMode, searchQuery]);
+    return [...result].sort((a, b) => {
+      let comparison = 0;
+      if (sortOption.field === 'name') {
+        comparison = a.filename.localeCompare(b.filename, undefined, { sensitivity: 'base' });
+      } else if (sortOption.field === 'date') {
+        const timeA = a.dateModified || a.dateAdded || 0;
+        const timeB = b.dateModified || b.dateAdded || 0;
+        comparison = timeA - timeB;
+      } else if (sortOption.field === 'duration') {
+        comparison = (a.duration || 0) - (b.duration || 0);
+      } else if (sortOption.field === 'size') {
+        comparison = (a.size || 0) - (b.size || 0);
+      }
+      return sortOption.order === 'desc' ? -comparison : comparison;
+    });
+  }, [videos, selectedFolder, browseMode, searchQuery, sortOption]);
+
+  const displayedFolders = useMemo(() => {
+    let result = folders;
+    if (searchQuery.trim().length > 0) {
+      const q = searchQuery.toLowerCase().trim();
+      result = result.filter((f) => f.name.toLowerCase().includes(q));
+    }
+    return [...result].sort((a, b) => {
+      let comparison = 0;
+      if (sortOption.field === 'name') {
+        comparison = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      } else if (sortOption.field === 'size') {
+        comparison = (a.totalSize || 0) - (b.totalSize || 0);
+      } else if (sortOption.field === 'duration') {
+        comparison = (a.videoCount || 0) - (b.videoCount || 0);
+      } else {
+        comparison = a.name.localeCompare(b.name);
+      }
+      return sortOption.order === 'desc' ? -comparison : comparison;
+    });
+  }, [folders, searchQuery, sortOption]);
 
   const insets = useSafeAreaInsets();
   const topInset = Math.max(insets.top, StatusBar.currentHeight || 0) + 0;
 
   const handlePlayVideo = (video: VideoItem) => {
-    navigation.navigate('Player', { video });
+    navigation.navigate('Player', { video, playlist: displayedVideos });
   };
 
   // Selection handlers for folders
@@ -434,65 +473,86 @@ export const MediaFoldersScreen: React.FC<MediaFoldersScreenProps> = ({ navigati
           </View>
         )}
 
-        {/* Search Bar */}
+        {/* Search Bar & Sort Button */}
         {!isSelectionMode && (
-          <View style={[styles.searchBar, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-            <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={theme.colors.textMuted} strokeWidth="2">
-              <Path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </Svg>
-            <TextInput
-              style={[styles.searchInput, { color: theme.colors.textPrimary }]}
-              placeholder="Search videos or folders..."
-              placeholderTextColor={theme.colors.textMuted}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery('')}>
-                <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={theme.colors.textMuted} strokeWidth="2">
-                  <Path d="M18 6L6 18M6 6l12 12" />
-                </Svg>
-              </TouchableOpacity>
-            )}
+          <View style={styles.searchRow}>
+            <View style={[styles.searchBar, { flex: 1, backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+              <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={theme.colors.textMuted} strokeWidth="2">
+                <Path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </Svg>
+              <TextInput
+                style={[styles.searchInput, { color: theme.colors.textPrimary }]}
+                placeholder="Search videos or folders..."
+                placeholderTextColor={theme.colors.textMuted}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                  <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={theme.colors.textMuted} strokeWidth="2">
+                    <Path d="M18 6L6 18M6 6l12 12" />
+                  </Svg>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Sort & Filter Button */}
+            <TouchableOpacity
+              style={[
+                styles.sortFilterBtn,
+                {
+                  backgroundColor: theme.colors.card,
+                  borderColor: theme.colors.border,
+                },
+              ]}
+              onPress={() => setIsSortModalVisible(true)}
+              activeOpacity={0.7}
+            >
+              <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={theme.colors.primary} strokeWidth="2.2">
+                <Path d="M3 6h18M6 12h12M10 18h4" />
+              </Svg>
+            </TouchableOpacity>
           </View>
         )}
 
-        {/* Mode Selector Tabs (Folders vs All Videos) */}
+        {/* Mode Selector Tabs (Folders vs All Videos) & Active Sort Chip */}
         {!isSelectionMode && (
-          <View style={styles.modeTabs}>
-            <TouchableOpacity
-              style={[
-                styles.modeTab,
-                browseMode === 'folders' && { backgroundColor: theme.colors.primary },
-              ]}
-              onPress={() => handleTabChange('folders')}
-            >
-              <Text
+          <View>
+            <View style={styles.modeTabs}>
+              <TouchableOpacity
                 style={[
-                  styles.modeTabText,
-                  { color: browseMode === 'folders' ? '#FFF' : theme.colors.textMuted },
+                  styles.modeTab,
+                  browseMode === 'folders' && { backgroundColor: theme.colors.primary },
                 ]}
+                onPress={() => handleTabChange('folders')}
               >
-                📁 Folders ({folders.length})
-              </Text>
-            </TouchableOpacity>
+                <Text
+                  style={[
+                    styles.modeTabText,
+                    { color: browseMode === 'folders' ? '#FFF' : theme.colors.textMuted },
+                  ]}
+                >
+                  📁 Folders ({folders.length})
+                </Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[
-                styles.modeTab,
-                browseMode === 'all' && { backgroundColor: theme.colors.primary },
-              ]}
-              onPress={() => handleTabChange('all')}
-            >
-              <Text
+              <TouchableOpacity
                 style={[
-                  styles.modeTabText,
-                  { color: browseMode === 'all' ? '#FFF' : theme.colors.textMuted },
+                  styles.modeTab,
+                  browseMode === 'all' && { backgroundColor: theme.colors.primary },
                 ]}
+                onPress={() => handleTabChange('all')}
               >
-                🎬 All Videos ({videos.length})
-              </Text>
-            </TouchableOpacity>
+                <Text
+                  style={[
+                    styles.modeTabText,
+                    { color: browseMode === 'all' ? '#FFF' : theme.colors.textMuted },
+                  ]}
+                >
+                  🎬 All Videos ({videos.length})
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
       </View>
@@ -504,7 +564,7 @@ export const MediaFoldersScreen: React.FC<MediaFoldersScreenProps> = ({ navigati
       {browseMode === 'folders' && !selectedFolder ? (
         /* FOLDERS LIST */
         <FlatList
-          data={folders}
+          data={displayedFolders}
           keyExtractor={(item) => item.name}
           contentContainerStyle={styles.listPadding}
           renderItem={({ item }) => {
@@ -637,6 +697,14 @@ export const MediaFoldersScreen: React.FC<MediaFoldersScreenProps> = ({ navigati
 
       {/* Floating Real-time Vault Progress Pill */}
       <VaultProgressPill />
+
+      {/* Sort & Filter Selection Modal */}
+      <SortFilterModal
+        visible={isSortModalVisible}
+        onClose={() => setIsSortModalVisible(false)}
+        sortOption={sortOption}
+        onSelectSort={setSortOption}
+      />
     </View>
   );
 };
@@ -691,6 +759,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -698,7 +772,33 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 12,
     height: 42,
-    marginBottom: 10,
+  },
+  sortFilterBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sortIndicatorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  sortIndicatorPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    gap: 6,
+  },
+  sortIndicatorText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   searchInput: {
     flex: 1,

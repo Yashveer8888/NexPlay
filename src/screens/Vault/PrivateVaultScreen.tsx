@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -17,8 +17,9 @@ import Svg, { Path } from 'react-native-svg';
 import { useLibraryStore } from '../../store/useLibraryStore';
 import { useThemeStore } from '../../store/useThemeStore';
 import { VaultVideoItem } from '../../services/native/NexPlayFileManager';
-import { VideoItem } from '../../types/video';
+import { VideoItem, SortOption } from '../../types/video';
 import { VaultProgressPill } from '../../components/common/VaultProgressPill';
+import { SortFilterModal } from '../../components/common/SortFilterModal';
 
 const formatDuration = (ms: number): string => {
   if (!ms || isNaN(ms)) return '00:00';
@@ -62,6 +63,31 @@ export const PrivateVaultScreen: React.FC<{ navigation: any }> = ({ navigation }
   // Selection mode for batch operations
   const [isSelectionMode, setIsSelectionMode] = useState<boolean>(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  // Sorting state
+  const [vaultSortOption, setVaultSortOption] = useState<SortOption>({
+    field: 'date',
+    order: 'desc',
+  });
+  const [isSortModalVisible, setIsSortModalVisible] = useState<boolean>(false);
+
+  const sortedVaultVideos = useMemo(() => {
+    return [...vaultVideos].sort((a, b) => {
+      let comparison = 0;
+      if (vaultSortOption.field === 'name') {
+        comparison = a.filename.localeCompare(b.filename, undefined, { sensitivity: 'base' });
+      } else if (vaultSortOption.field === 'date') {
+        const timeA = a.dateMoved || a.dateAdded || 0;
+        const timeB = b.dateMoved || b.dateAdded || 0;
+        comparison = timeA - timeB;
+      } else if (vaultSortOption.field === 'duration') {
+        comparison = (a.duration || 0) - (b.duration || 0);
+      } else if (vaultSortOption.field === 'size') {
+        comparison = (a.size || 0) - (b.size || 0);
+      }
+      return vaultSortOption.order === 'desc' ? -comparison : comparison;
+    });
+  }, [vaultVideos, vaultSortOption]);
 
   useEffect(() => {
     loadVault();
@@ -131,26 +157,33 @@ export const PrivateVaultScreen: React.FC<{ navigation: any }> = ({ navigation }
   };
 
   const handlePlayVideo = (item: VaultVideoItem) => {
-    const videoItem: VideoItem = {
-      id: item.id,
-      uri: `file://${item.vaultPath}`,
-      path: item.vaultPath,
-      filename: item.filename,
-      size: item.size,
-      duration: item.duration,
-      width: item.width,
-      height: item.height,
-      mimeType: item.mimeType,
-      dateAdded: item.dateAdded,
-      dateModified: item.dateMoved,
+    const vaultPlaylist: VideoItem[] = sortedVaultVideos.map((v: VaultVideoItem) => ({
+      id: v.id,
+      title: v.filename.replace(/\.[^/.]+$/, ''),
+      filename: v.filename,
+      path: v.vaultPath,
+      uri: v.vaultPath.startsWith('file://') ? v.vaultPath : `file://${v.vaultPath}`,
+      size: v.size,
+      duration: v.duration,
+      width: v.width,
+      height: v.height,
+      mimeType: v.mimeType,
+      dateAdded: v.dateAdded,
+      dateModified: v.dateMoved,
       folder: 'Private Vault',
       lastPosition: 0,
       completed: false,
       lastPlayedAt: Date.now(),
       playCount: 1,
-      thumbnailUri: item.thumbnailUri,
-    };
-    navigation.navigate('Player', { video: videoItem });
+      thumbnailUri: v.thumbnailUri,
+    }));
+
+    const targetVideo = vaultPlaylist.find((v: VideoItem) => v.id === item.id) || vaultPlaylist[0];
+    navigation.navigate('Player', {
+      video: targetVideo,
+      playlist: vaultPlaylist,
+      isVault: true,
+    });
   };
 
   const handleBatchRestore = async () => {
@@ -356,6 +389,17 @@ export const PrivateVaultScreen: React.FC<{ navigation: any }> = ({ navigation }
             {vaultVideos.length > 0 && (
               <TouchableOpacity
                 style={[styles.headerIconBtn, { backgroundColor: theme.colors.surfaceLight }]}
+                onPress={() => setIsSortModalVisible(true)}
+              >
+                <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={theme.colors.primary} strokeWidth="2.2">
+                  <Path d="M3 6h18M6 12h12M10 18h4" />
+                </Svg>
+              </TouchableOpacity>
+            )}
+
+            {vaultVideos.length > 0 && (
+              <TouchableOpacity
+                style={[styles.headerIconBtn, { backgroundColor: theme.colors.surfaceLight }]}
                 onPress={() => setIsSelectionMode(true)}
               >
                 <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={theme.colors.primary} strokeWidth="2">
@@ -378,7 +422,7 @@ export const PrivateVaultScreen: React.FC<{ navigation: any }> = ({ navigation }
 
       {/* Vault Videos List */}
       <FlatList
-        data={vaultVideos}
+        data={sortedVaultVideos}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listPadding}
         renderItem={({ item }) => {
@@ -482,6 +526,15 @@ export const PrivateVaultScreen: React.FC<{ navigation: any }> = ({ navigation }
 
       {/* Floating Real-time Vault Progress Pill */}
       <VaultProgressPill />
+
+      {/* Sort Filter Modal */}
+      <SortFilterModal
+        visible={isSortModalVisible}
+        onClose={() => setIsSortModalVisible(false)}
+        sortOption={vaultSortOption}
+        onSelectSort={setVaultSortOption}
+        title="Sort Private Videos"
+      />
     </View>
   );
 };

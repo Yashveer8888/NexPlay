@@ -1,11 +1,16 @@
 package com.nexplay.player
 
+import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.common.MapBuilder
 import com.facebook.react.uimanager.SimpleViewManager
 import com.facebook.react.uimanager.ThemedReactContext
 import com.facebook.react.uimanager.annotations.ReactProp
 
 class NexPlayPlayerViewManager : SimpleViewManager<NexPlayPlayerView>() {
+
+    companion object {
+        const val COMMAND_SEEK_TO = 1
+    }
 
     override fun getName(): String = "NexPlayPlayerView"
 
@@ -18,12 +23,36 @@ class NexPlayPlayerViewManager : SimpleViewManager<NexPlayPlayerView>() {
         view.releasePlayer()
     }
 
+    override fun getCommandsMap(): Map<String, Int>? {
+        return mapOf("seekTo" to COMMAND_SEEK_TO)
+    }
+
+    override fun receiveCommand(root: NexPlayPlayerView, commandId: String, args: ReadableArray?) {
+        super.receiveCommand(root, commandId, args)
+        if (commandId == "seekTo" || commandId == "1") {
+            val pos = args?.getDouble(0) ?: return
+            if (pos >= 0.0) {
+                root.seekToMs(pos.toLong())
+            }
+        }
+    }
+
+    override fun receiveCommand(root: NexPlayPlayerView, commandId: Int, args: ReadableArray?) {
+        super.receiveCommand(root, commandId, args)
+        if (commandId == COMMAND_SEEK_TO) {
+            val pos = args?.getDouble(0) ?: return
+            if (pos >= 0.0) {
+                root.seekToMs(pos.toLong())
+            }
+        }
+    }
+
     @ReactProp(name = "videoUri")
     fun setVideoUri(view: NexPlayPlayerView, uri: String?) {
         view.setVideoUri(uri)
     }
 
-    @ReactProp(name = "initialPositionMs")
+    @ReactProp(name = "initialPositionMs", defaultDouble = 0.0)
     fun setInitialPositionMs(view: NexPlayPlayerView, initialPos: Double) {
         view.setInitialPositionMs(initialPos.toLong())
     }
@@ -33,9 +62,11 @@ class NexPlayPlayerViewManager : SimpleViewManager<NexPlayPlayerView>() {
         view.setPaused(paused)
     }
 
-    @ReactProp(name = "seekToMs")
+    @ReactProp(name = "seekToMs", defaultDouble = -1.0)
     fun setSeekToMs(view: NexPlayPlayerView, seekToMs: Double) {
-        view.seekToMs(seekToMs.toLong())
+        if (seekToMs >= 0.0) {
+            view.seekToMs(seekToMs.toLong())
+        }
     }
 
     @ReactProp(name = "speed")

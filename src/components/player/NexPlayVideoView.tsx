@@ -1,5 +1,5 @@
-import React from 'react';
-import { requireNativeComponent, ViewProps } from 'react-native';
+import React, { forwardRef, useImperativeHandle, useRef } from 'react';
+import { requireNativeComponent, ViewProps, UIManager, findNodeHandle } from 'react-native';
 
 export interface PlayerStatusEvent {
   position: number; // in milliseconds
@@ -37,8 +37,27 @@ export interface NexPlayVideoViewProps extends ViewProps {
   onTracksChanged?: (event: { nativeEvent: TracksChangedEvent }) => void;
 }
 
+export interface NexPlayVideoViewRef {
+  seekTo: (positionMs: number) => void;
+}
+
 const NativeVideoView = requireNativeComponent<NexPlayVideoViewProps>('NexPlayPlayerView');
 
-export const NexPlayVideoView: React.FC<NexPlayVideoViewProps> = (props) => {
-  return <NativeVideoView {...props} />;
-};
+export const NexPlayVideoView = forwardRef<NexPlayVideoViewRef, NexPlayVideoViewProps>((props, ref) => {
+  const nativeRef = useRef<any>(null);
+
+  useImperativeHandle(ref, () => ({
+    seekTo: (positionMs: number) => {
+      if (nativeRef.current && positionMs >= 0) {
+        const handle = findNodeHandle(nativeRef.current);
+        if (handle) {
+          const config = (UIManager.getViewManagerConfig?.('NexPlayPlayerView') as any);
+          const commandId = config?.Commands?.seekTo ?? 1;
+          UIManager.dispatchViewManagerCommand(handle, commandId, [positionMs]);
+        }
+      }
+    },
+  }));
+
+  return <NativeVideoView ref={nativeRef} {...props} />;
+});

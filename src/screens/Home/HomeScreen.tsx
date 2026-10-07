@@ -44,7 +44,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const topInset = Math.max(insets.top, StatusBar.currentHeight || 0) + 12;
 
   const handlePlayVideo = (video: VideoItem) => {
-    navigation.navigate('Player', { video });
+    navigation.navigate('Player', { video, playlist: videos });
   };
 
   return (
